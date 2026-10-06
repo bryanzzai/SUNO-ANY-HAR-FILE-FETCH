@@ -5,10 +5,10 @@ using System.Reflection;
 using System.Windows;
 using System.Windows.Data;
 using Microsoft.Win32;
-using SunoHarFileDownload.Models;
-using SunoHarFileDownload.Services;
+using SunoRawHarScanner.Models;
+using SunoRawHarScanner.Services;
 
-namespace SunoHarFileDownload;
+namespace SunoRawHarScanner;
 
 public partial class MainWindow : Window
 {

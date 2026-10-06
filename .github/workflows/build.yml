@@ -2,7 +2,7 @@ name: Build
 
 on:
   push:
-    branches: [ main, har-raw-scanner ]
+    branches: [ main, suno-raw-har-scanner ]
   pull_request:
     branches: [ main ]
 
@@ -23,7 +23,13 @@ jobs:
           dotnet-version: 10.0.x
 
       - name: Restore
-        run: dotnet restore src/SubdlProDownload/SubdlProDownload.csproj
+        run: dotnet restore src/suno-raw-har-scanner/suno-raw-har-scanner.csproj
 
       - name: Build
-        run: dotnet build src/SubdlProDownload/SubdlProDownload.csproj --configuration Release --no-restore
+        run: dotnet build src/suno-raw-har-scanner/suno-raw-har-scanner.csproj --configuration Release --no-restore
+
+      - name: Verify executable name
+        shell: pwsh
+        run: |
+          $exe = 'src/suno-raw-har-scanner/bin/Release/net10.0-windows/suno-raw-har-scanner.exe'
+          if (-not (Test-Path $exe)) { throw "Expected executable was not produced: $exe" }

@@ -1,7 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 
-namespace SunoHarFileDownload.Models;
+namespace SunoRawHarScanner.Models;
 
 public sealed class HarEntryRow : INotifyPropertyChanged
 {

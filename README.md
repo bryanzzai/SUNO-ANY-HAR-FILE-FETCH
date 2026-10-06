@@ -1,6 +1,6 @@
-# SUNO-ANY-HAR-FILE-FETCH
+# Suno Raw HAR Scanner
 
-Development branch: `har-raw-scanner`.
+Development branch: `suno-raw-har-scanner`.
 
 Windows WPF utility for reconstructing embedded Suno M4A sources from a HAR file.
 
@@ -43,5 +43,5 @@ The app never makes a network request. It uses only the selected HAR's embedded 
 ## Build
 
 ```powershell
-dotnet build .\src\SubdlProDownload\SubdlProDownload.csproj -c Release
+dotnet build .\src\suno-raw-har-scanner\suno-raw-har-scanner.csproj -c Release
 ```

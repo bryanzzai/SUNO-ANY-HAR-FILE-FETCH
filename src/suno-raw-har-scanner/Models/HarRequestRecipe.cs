@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace SunoHarFileDownload.Models;
+namespace SunoRawHarScanner.Models;
 
 /// <summary>
 /// A replayable HTTP request captured in a HAR. Volatile browser-only headers are

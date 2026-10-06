@@ -1,6 +1,6 @@
 using System.Windows;
 
-namespace SunoHarFileDownload;
+namespace SunoRawHarScanner;
 
 public partial class App : Application
 {

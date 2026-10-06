@@ -1,8 +1,8 @@
 using System.Security.Cryptography;
 using System.Text;
-using SunoHarFileDownload.Models;
+using SunoRawHarScanner.Models;
 
-namespace SunoHarFileDownload.Services;
+namespace SunoRawHarScanner.Services;
 
 /// <summary>
 /// Mirrors Suno's browser playback path: the rights response is unwrapped with

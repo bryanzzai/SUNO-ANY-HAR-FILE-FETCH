@@ -6,9 +6,11 @@
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <RootNamespace>SunoHarFileDownload</RootNamespace>
-    <AssemblyName>SunoHarFileDownload</AssemblyName>
-    <Version>0.2.0</Version>
+    <RootNamespace>SunoRawHarScanner</RootNamespace>
+    <AssemblyName>suno-raw-har-scanner</AssemblyName>
+    <Product>Suno Raw HAR Scanner</Product>
+    <Title>Suno Raw HAR Scanner</Title>
+    <Version>1.0.0</Version>
   </PropertyGroup>
 
 </Project>

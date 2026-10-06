@@ -1,7 +1,7 @@
 using System.IO;
-using SunoHarFileDownload.Models;
+using SunoRawHarScanner.Models;
 
-namespace SunoHarFileDownload.Services;
+namespace SunoRawHarScanner.Services;
 
 public sealed class EmbeddedM4aWriter
 {

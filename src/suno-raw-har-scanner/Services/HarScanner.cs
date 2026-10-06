@@ -1,9 +1,9 @@
 using System.IO;
 using System.Text;
 using System.Text.Json;
-using SunoHarFileDownload.Models;
+using SunoRawHarScanner.Models;
 
-namespace SunoHarFileDownload.Services;
+namespace SunoRawHarScanner.Services;
 
 public static class HarScanner
 {

@@ -1,7 +1,7 @@
-<Window x:Class="SunoHarFileDownload.MainWindow"
+<Window x:Class="SunoRawHarScanner.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="SUNO HAR File Download"
+        Title="Suno Raw HAR Scanner"
         Height="820"
         Width="1350"
         MinHeight="650"
@@ -21,7 +21,7 @@
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <StackPanel>
-                <TextBlock Text="SUNO HAR File Download" FontSize="28" FontWeight="SemiBold"/>
+                <TextBlock Text="Suno Raw HAR Scanner" FontSize="28" FontWeight="SemiBold"/>
                 <TextBlock Margin="0,4,0,0" Foreground="DimGray" Text="Choose a HAR file, inspect the downloadable audio/video entries, tick what you want, and download."/>
             </StackPanel>
             <TextBlock Grid.Column="1" VerticalAlignment="Top" Foreground="DimGray" FontSize="11" Text="{Binding ReleaseLabel}"/>
