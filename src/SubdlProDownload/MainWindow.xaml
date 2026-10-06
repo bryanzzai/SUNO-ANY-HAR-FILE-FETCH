@@ -81,7 +81,6 @@
                             <CheckBox HorizontalAlignment="Center"
                                       VerticalAlignment="Center"
                                       IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                      IsEnabled="{Binding CanDownload}"
                                       Click="DownloadCheckBox_Click"/>
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
