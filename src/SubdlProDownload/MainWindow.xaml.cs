@@ -111,7 +111,7 @@ public partial class MainWindow : Window
                 : $"Scan complete. Found {scan.DownloadableEntries} downloadable audio/video entries.";
 
             if (scan.OpaquePayloadEntries > 0)
-                StatusTextBlock.Text += $" {scan.OpaquePayloadEntries} source entr(y/ies) have matching rights records and will be fetched live when selected.";
+                StatusTextBlock.Text += $" {scan.OpaquePayloadEntries} embedded encrypted source entr(y/ies) have matching rights records and can be reconstructed offline.";
 
             if (scan.ParseProblems > 0)
                 StatusTextBlock.Text += $" Skipped {scan.ParseProblems} malformed entries.";
@@ -159,8 +159,8 @@ public partial class MainWindow : Window
         {
             Directory.CreateDirectory(outputFolder);
             var finalNames = RomanNaming.BuildFinalNames(selected);
-            var pipeline = new SunoWavPipeline();
-            var zipPath = await pipeline.CreateZipAsync(
+            var writer = new EmbeddedM4aWriter();
+            await writer.WriteAsync(
                 selected,
                 finalNames,
                 outputFolder,
@@ -172,7 +172,7 @@ public partial class MainWindow : Window
                 _operationCts!.Token);
 
             ProgressBar.Value = selected.Length;
-            StatusTextBlock.Text = $"Complete. {selected.Length} WAV file(s) packed in {Path.GetFileName(zipPath)}.";
+            StatusTextBlock.Text = $"Complete. {selected.Length} M4A file(s) written to the output folder.";
         }
         catch (OperationCanceledException)
         {

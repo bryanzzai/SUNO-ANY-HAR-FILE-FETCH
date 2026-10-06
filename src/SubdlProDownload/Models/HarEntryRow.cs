@@ -20,6 +20,7 @@ public sealed class HarEntryRow : INotifyPropertyChanged
     public IReadOnlyDictionary<string, string> RequestHeaders { get; init; }
         = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
     public HarRequestRecipe? RightsRequest { get; init; }
+    public MangoLicense? EmbeddedLicense { get; init; }
 
     public bool IsSelected
     {

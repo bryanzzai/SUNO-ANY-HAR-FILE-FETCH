@@ -28,7 +28,7 @@ public static class HarScanner
             throw new InvalidDataException("HAR root does not contain log.entries as an array.");
 
         var titles = FindClipTitles(entries);
-        var rightsRequests = FindMangoRightsRequests(entries);
+        var rightsRecords = FindMangoRightsRecords(entries);
         var rows = new List<HarEntryRow>(Math.Min(maxDisplayedRows, entries.GetArrayLength()));
         var seenContentIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var downloadableEntries = 0;
@@ -42,7 +42,7 @@ public static class HarScanner
             entryIndex++;
             try
             {
-                var row = ParseEntry(entry, entryIndex, titles, rightsRequests);
+                var row = ParseEntry(entry, entryIndex, titles, rightsRecords);
                 if (row is null || !seenContentIds.Add(row.ContentId)) continue;
                 downloadableEntries++;
                 if (row.IsOpaquePayload) opaquePayloadEntries++;
@@ -56,7 +56,7 @@ public static class HarScanner
 
     private static HarEntryRow? ParseEntry(
         JsonElement entry, int entryIndex, IReadOnlyDictionary<string, string> titles,
-        IReadOnlyDictionary<string, HarRequestRecipe> rightsRequests)
+        IReadOnlyDictionary<string, EmbeddedRights> rightsRecords)
     {
         var request = entry.TryGetProperty("request", out var requestElement) ? requestElement : default;
         var response = entry.TryGetProperty("response", out var responseElement) ? responseElement : default;
@@ -68,12 +68,12 @@ public static class HarScanner
         var rawFileName = GetRawFileName(url, responseHeaders, mime, entryIndex);
         var extension = Path.GetExtension(rawFileName);
         if (!mime.StartsWith("audio/", StringComparison.OrdinalIgnoreCase) && !AudioExtensions.Contains(extension)) return null;
-        if (!CanReplayAsGet(method, url)) return null;
 
         var contentId = Path.GetFileNameWithoutExtension(rawFileName);
         if (string.IsNullOrWhiteSpace(contentId)) return null;
         var embeddedBody = HasEmbeddedText(response) ? DecodeEmbeddedBody(response) : null;
-        var hasRights = rightsRequests.TryGetValue(contentId, out var rightsRequest);
+        if (embeddedBody is null) return null;
+        var hasRights = rightsRecords.TryGetValue(contentId, out var rightsRecord);
         var payload = DescribePayload(embeddedBody, hasRights);
         var releaseName = titles.TryGetValue(contentId, out var title) && !string.IsNullOrWhiteSpace(title)
             ? title : GetReleaseName(entry, request, response, rawFileName, url);
@@ -83,20 +83,21 @@ public static class HarScanner
             EntryIndex = entryIndex,
             ReleaseName = releaseName,
             RawFileName = rawFileName,
-            OutputFileName = releaseName + ".wav",
+            OutputFileName = releaseName + ".m4a",
             ContentId = contentId,
             Url = url,
             PayloadStatus = payload.Status,
             IsOpaquePayload = payload.IsOpaque,
             EmbeddedBody = embeddedBody,
             RequestHeaders = requestHeaders,
-            RightsRequest = rightsRequest
+            RightsRequest = rightsRecord?.Recipe,
+            EmbeddedLicense = rightsRecord?.License
         };
     }
 
-    private static Dictionary<string, HarRequestRecipe> FindMangoRightsRequests(JsonElement entries)
+    private static Dictionary<string, EmbeddedRights> FindMangoRightsRecords(JsonElement entries)
     {
-        var result = new Dictionary<string, HarRequestRecipe>(StringComparer.OrdinalIgnoreCase);
+        var result = new Dictionary<string, EmbeddedRights>(StringComparer.OrdinalIgnoreCase);
         foreach (var entry in entries.EnumerateArray())
         {
             var request = entry.TryGetProperty("request", out var item) ? item : default;
@@ -105,9 +106,30 @@ public static class HarScanner
             var body = request.TryGetProperty("postData", out var postData) ? GetString(postData, "text") : string.Empty;
             var contentId = ReadRightsContentId(body);
             if (string.IsNullOrWhiteSpace(contentId)) continue;
-            result[contentId] = new HarRequestRecipe(GetString(request, "method"), url, ReadHeaders(request), body);
+            var response = entry.TryGetProperty("response", out var responseElement) ? responseElement : default;
+            var license = ReadEmbeddedLicense(response);
+            if (license is not null)
+                result[contentId] = new EmbeddedRights(
+                    new HarRequestRecipe(GetString(request, "method"), url, ReadHeaders(request), body),
+                    license);
         }
         return result;
+    }
+
+    private static MangoLicense? ReadEmbeddedLicense(JsonElement response)
+    {
+        if (!HasEmbeddedText(response)) return null;
+        try
+        {
+            using var document = JsonDocument.Parse(DecodeEmbeddedBody(response));
+            var key = GetString(document.RootElement, "key");
+            var iv = GetString(document.RootElement, "iv");
+            return string.IsNullOrWhiteSpace(key) || string.IsNullOrWhiteSpace(iv)
+                ? null
+                : new MangoLicense(key, iv, GetString(document.RootElement, "guest_token"));
+        }
+        catch (JsonException) { return null; }
+        catch (FormatException) { return null; }
     }
 
     private static string ReadRightsContentId(string body)
@@ -174,15 +196,16 @@ public static class HarScanner
 
     private static PayloadAnalysis DescribePayload(byte[]? body, bool matchingRightsRecord)
     {
-        if (body is null) return new PayloadAnalysis("Live source will be fetched after selection", false);
+        if (body is null) return new PayloadAnalysis("No embedded source body in HAR", false);
         if (IsIsoBaseMedia(body)) return new PayloadAnalysis("M4A container verified", false);
         return matchingRightsRecord
-            ? new PayloadAnalysis("Encrypted source with matching rights request", true)
-            : new PayloadAnalysis("Opaque source; no matching rights request", true);
+            ? new PayloadAnalysis("Embedded encrypted source with matching rights record", true)
+            : new PayloadAnalysis("Opaque source; no embedded rights record", true);
     }
 
     private static bool IsIsoBaseMedia(ReadOnlySpan<byte> body) => body.Length >= 8 && body[4..].StartsWith("ftyp"u8);
     private sealed record PayloadAnalysis(string Status, bool IsOpaque);
+    private sealed record EmbeddedRights(HarRequestRecipe Recipe, MangoLicense License);
 
     private static string GetReleaseName(JsonElement entry, JsonElement request, JsonElement response, string rawFileName, string url)
     {
@@ -254,9 +277,6 @@ public static class HarScanner
         return GetString(content, "encoding").Equals("base64", StringComparison.OrdinalIgnoreCase)
             ? Convert.FromBase64String(text) : Encoding.UTF8.GetBytes(text);
     }
-
-    private static bool CanReplayAsGet(string method, string url) => method.Equals("GET", StringComparison.OrdinalIgnoreCase) &&
-        Uri.TryCreate(url, UriKind.Absolute, out var uri) && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
 
     private static string GetString(JsonElement owner, string propertyName)
     {
