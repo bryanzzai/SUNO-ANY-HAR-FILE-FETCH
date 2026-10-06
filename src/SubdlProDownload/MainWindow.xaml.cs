@@ -44,8 +44,7 @@ public partial class MainWindow : Window
             Multiselect = false
         };
 
-        if (!string.IsNullOrWhiteSpace(OutputFolderTextBox.Text) &&
-            Directory.Exists(OutputFolderTextBox.Text))
+        if (!string.IsNullOrWhiteSpace(OutputFolderTextBox.Text) && Directory.Exists(OutputFolderTextBox.Text))
             dialog.InitialDirectory = OutputFolderTextBox.Text;
 
         if (dialog.ShowDialog(this) == true)
@@ -55,17 +54,15 @@ public partial class MainWindow : Window
     private async void ScanButton_Click(object sender, RoutedEventArgs e)
     {
         var harPath = HarFileTextBox.Text.Trim();
-
         if (!File.Exists(harPath))
         {
             MessageBox.Show(this, "Choose an existing .har file first.", "HAR file", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 
-        BeginOperation("Boring through HAR entries…");
+        BeginOperation("Scanning HAR entries…");
         Rows.Clear();
         CountTextBlock.Text = "scanning…";
-        DownloadButton.IsEnabled = false;
 
         try
         {
@@ -74,12 +71,13 @@ public partial class MainWindow : Window
             foreach (var row in scan.Rows)
                 Rows.Add(row);
 
-            CountTextBlock.Text =
-                $"HAR: {scan.TotalEntries} | shown: {scan.DisplayedEntries} | media: {scan.MediaCandidates} | recoverable: {scan.RecoverableCandidates} | errors: {scan.ParseProblems}";
+            CountTextBlock.Text = $"{scan.DisplayedEntries} rows";
+            StatusTextBlock.Text = scan.DownloadableEntries > MaxDisplayedRows
+                ? $"Scan complete. Found {scan.DownloadableEntries} downloadable audio/video entries; showing first {MaxDisplayedRows}."
+                : $"Scan complete. Found {scan.DownloadableEntries} downloadable audio/video entries.";
 
-            StatusTextBlock.Text = scan.TotalEntries > MaxDisplayedRows
-                ? $"Scan complete. Fixed raw window shows first {MaxDisplayedRows} of {scan.TotalEntries} entries in original HAR order."
-                : $"Scan complete. Showing all {scan.TotalEntries} HAR entries in original order.";
+            if (scan.ParseProblems > 0)
+                StatusTextBlock.Text += $" Skipped {scan.ParseProblems} malformed entries.";
         }
         catch (OperationCanceledException)
         {
@@ -87,32 +85,22 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            StatusTextBlock.Text = "FATAL HAR SCAN ERROR — full dump shown.";
-            MessageBox.Show(
-                this,
-                ex.ToString(),
-                "FATAL HAR SCAN ERROR",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+            StatusTextBlock.Text = "FATAL HAR SCAN ERROR";
+            MessageBox.Show(this, ex.ToString(), "FATAL HAR SCAN ERROR", MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally
         {
             EndOperation();
+            DownloadButton.IsEnabled = Rows.Any(row => row.IsSelected);
         }
     }
 
     private void DownloadCheckBox_Click(object sender, RoutedEventArgs e)
-    {
-        DownloadButton.IsEnabled = Rows.Any(row => row.IsSelected);
-    }
+        => DownloadButton.IsEnabled = Rows.Any(row => row.IsSelected);
 
     private async void DownloadButton_Click(object sender, RoutedEventArgs e)
     {
-        var selected = Rows
-            .Where(row => row.IsSelected)
-            .OrderBy(row => row.EntryIndex)
-            .ToArray();
-
+        var selected = Rows.Where(row => row.IsSelected).OrderBy(row => row.EntryIndex).ToArray();
         if (selected.Length == 0)
         {
             MessageBox.Show(this, "Tick one or more rows first.", "Nothing selected", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -126,48 +114,28 @@ public partial class MainWindow : Window
             return;
         }
 
-        BeginOperation($"Preparing {selected.Length} selected download(s)…");
+        BeginOperation($"Preparing {selected.Length} download(s)…");
         ProgressBar.Maximum = selected.Length;
         ProgressBar.Value = 0;
 
         try
         {
             Directory.CreateDirectory(outputFolder);
-
-            // The raw grid is never renamed. Roman numbering is calculated only now,
-            // at the write boundary, and only for exact same-name + same-extension twins.
             var finalNames = RomanNaming.BuildFinalNames(selected);
             using var downloader = new MediaDownloader();
 
-            var completed = 0;
-            var failed = 0;
-
-            foreach (var row in selected)
+            for (var index = 0; index < selected.Length; index++)
             {
                 _operationCts!.Token.ThrowIfCancellationRequested();
+                var row = selected[index];
                 var finalName = finalNames[row];
 
-                row.DownloadStatus = $"Downloading -> {finalName}";
-                StatusTextBlock.Text = $"Downloading HAR entry {row.EntryIndex}: {row.RawFileName} -> {finalName}";
-
-                try
-                {
-                    await downloader.DownloadAsync(row, outputFolder, finalName, _operationCts.Token);
-                    row.DownloadStatus = $"Saved: {finalName}";
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    failed++;
-                    row.DownloadStatus = $"FAILED: {ex.GetType().Name}: {ex.Message}";
-                }
-
-                completed++;
-                ProgressBar.Value = completed;
+                StatusTextBlock.Text = $"Downloading {index + 1}/{selected.Length}: {row.ReleaseName}";
+                await downloader.DownloadAsync(row, outputFolder, finalName, _operationCts.Token);
+                ProgressBar.Value = index + 1;
             }
 
-            StatusTextBlock.Text = failed == 0
-                ? $"Download complete. {completed} file(s) written."
-                : $"Download pass complete. {completed - failed} saved, {failed} failed. Failed rows remain visible.";
+            StatusTextBlock.Text = $"Download complete. {selected.Length} file(s) written.";
         }
         catch (OperationCanceledException)
         {
@@ -175,13 +143,8 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            StatusTextBlock.Text = "FATAL DOWNLOAD SETUP ERROR — full dump shown.";
-            MessageBox.Show(
-                this,
-                ex.ToString(),
-                "FATAL DOWNLOAD SETUP ERROR",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+            StatusTextBlock.Text = "FATAL DOWNLOAD ERROR";
+            MessageBox.Show(this, ex.ToString(), "FATAL DOWNLOAD ERROR", MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally
         {
@@ -198,7 +161,9 @@ public partial class MainWindow : Window
         _operationCts?.Dispose();
         _operationCts = new CancellationTokenSource();
 
+        BrowseHarButton.IsEnabled = false;
         ScanButton.IsEnabled = false;
+        BrowseOutputButton.IsEnabled = false;
         DownloadButton.IsEnabled = false;
         CancelButton.IsEnabled = true;
         StatusTextBlock.Text = status;
@@ -207,7 +172,9 @@ public partial class MainWindow : Window
 
     private void EndOperation()
     {
+        BrowseHarButton.IsEnabled = true;
         ScanButton.IsEnabled = true;
+        BrowseOutputButton.IsEnabled = true;
         CancelButton.IsEnabled = false;
 
         _operationCts?.Dispose();

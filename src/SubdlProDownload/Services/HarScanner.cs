@@ -35,7 +35,10 @@ public static class HarScanner
         ["video/mpeg"] = ".mpeg"
     };
 
-    public static async Task<HarScanResult> ScanAsync(string harPath, int maxDisplayedRows, CancellationToken cancellationToken)
+    public static async Task<HarScanResult> ScanAsync(
+        string harPath,
+        int maxDisplayedRows,
+        CancellationToken cancellationToken)
     {
         await using var stream = File.OpenRead(harPath);
         using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
@@ -48,8 +51,7 @@ public static class HarScanner
         }
 
         var rows = new List<HarEntryRow>(Math.Min(maxDisplayedRows, entries.GetArrayLength()));
-        var mediaCandidates = 0;
-        var recoverableCandidates = 0;
+        var downloadableEntries = 0;
         var parseProblems = 0;
         var entryIndex = 0;
 
@@ -57,102 +59,99 @@ public static class HarScanner
         {
             cancellationToken.ThrowIfCancellationRequested();
             entryIndex++;
-            var materialize = entryIndex <= maxDisplayedRows;
 
             try
             {
-                var row = ParseEntry(entry, entryIndex, materialize);
+                var parsed = ParseEntry(entry, entryIndex, rows.Count < maxDisplayedRows);
+                if (!parsed.Downloadable) continue;
 
-                if (row.IsMediaCandidate) mediaCandidates++;
-                if (row.CanDownload) recoverableCandidates++;
-                if (materialize) rows.Add(row);
+                downloadableEntries++;
+                if (parsed.Row is not null)
+                    rows.Add(parsed.Row);
             }
-            catch (Exception ex)
+            catch
             {
                 parseProblems++;
-
-                if (materialize)
-                {
-                    rows.Add(new HarEntryRow
-                    {
-                        EntryIndex = entryIndex,
-                        Method = "?",
-                        StatusCode = 0,
-                        Classification = "ERROR",
-                        MimeType = string.Empty,
-                        RawFileName = $"entry-{entryIndex:00000}",
-                        Url = TryGetRawUrl(entry),
-                        SizeText = string.Empty,
-                        RecoveryMode = "Unavailable",
-                        Diagnostic = $"{ex.GetType().Name}: {ex.Message}",
-                        IsMediaCandidate = false,
-                        CanDownload = false
-                    });
-                }
             }
         }
 
         return new HarScanResult(
             entryIndex,
+            downloadableEntries,
             rows.Count,
-            mediaCandidates,
-            recoverableCandidates,
             parseProblems,
             rows);
     }
 
-    private static HarEntryRow ParseEntry(JsonElement entry, int entryIndex, bool materialize)
+    private static (bool Downloadable, HarEntryRow? Row) ParseEntry(
+        JsonElement entry,
+        int entryIndex,
+        bool materialize)
     {
         var request = entry.TryGetProperty("request", out var requestElement) ? requestElement : default;
         var response = entry.TryGetProperty("response", out var responseElement) ? responseElement : default;
 
         var method = GetString(request, "method");
         var url = GetString(request, "url");
-        var status = GetInt32(response, "status");
-
         var requestHeaders = ReadHeaders(request);
         var responseHeaders = ReadHeaders(response);
-
         var mime = GetMimeType(response, responseHeaders);
-        var rawName = GetRawFileName(url, responseHeaders, mime, entryIndex);
-        var extension = Path.GetExtension(rawName);
-        var classification = Classify(mime, extension);
-        var isMedia = classification is "Audio" or "Video";
+        var rawFileName = GetRawFileName(url, responseHeaders, mime, entryIndex);
+        var extension = Path.GetExtension(rawFileName);
 
-        byte[]? embeddedBody = null;
-        var hasEmbeddedText = HasEmbeddedText(response);
+        var isAudio = mime.StartsWith("audio/", StringComparison.OrdinalIgnoreCase) || AudioExtensions.Contains(extension);
+        var isVideo = mime.StartsWith("video/", StringComparison.OrdinalIgnoreCase) || VideoExtensions.Contains(extension);
+        if (!isAudio && !isVideo)
+            return (false, null);
 
-        if (materialize && hasEmbeddedText)
-            embeddedBody = DecodeEmbeddedBody(response);
-
+        var hasEmbeddedBody = HasEmbeddedText(response);
         var canReplay = CanReplayAsGet(method, url);
-        var canDownload = isMedia && (hasEmbeddedText || canReplay);
-        var recoveryMode = hasEmbeddedText
-            ? "Embedded"
-            : canReplay
-                ? "Replay GET"
-                : "Unavailable";
+        if (!hasEmbeddedBody && !canReplay)
+            return (false, null);
 
-        var size = GetContentSize(response);
-        var diagnostic = BuildDiagnostic(mime, extension, hasEmbeddedText, canReplay, status, classification);
+        if (!materialize)
+            return (true, null);
 
-        return new HarEntryRow
+        var releaseName = GetReleaseName(entry, request, response, rawFileName, url);
+        var embeddedBody = hasEmbeddedBody ? DecodeEmbeddedBody(response) : null;
+
+        return (true, new HarEntryRow
         {
             EntryIndex = entryIndex,
-            Method = string.IsNullOrWhiteSpace(method) ? "?" : method,
-            StatusCode = status,
-            Classification = classification,
-            MimeType = mime,
-            RawFileName = rawName,
+            ReleaseName = releaseName,
+            RawFileName = rawFileName,
             Url = url,
-            SizeText = FormatBytes(size),
-            RecoveryMode = recoveryMode,
-            Diagnostic = diagnostic,
-            IsMediaCandidate = isMedia,
-            CanDownload = canDownload,
             EmbeddedBody = embeddedBody,
             RequestHeaders = requestHeaders
-        };
+        });
+    }
+
+    private static string GetReleaseName(
+        JsonElement entry,
+        JsonElement request,
+        JsonElement response,
+        string rawFileName,
+        string url)
+    {
+        var entryComment = GetString(entry, "comment");
+        if (!string.IsNullOrWhiteSpace(entryComment)) return entryComment;
+
+        var responseComment = GetString(response, "comment");
+        if (!string.IsNullOrWhiteSpace(responseComment)) return responseComment;
+
+        var requestComment = GetString(request, "comment");
+        if (!string.IsNullOrWhiteSpace(requestComment)) return requestComment;
+
+        if (!string.IsNullOrWhiteSpace(rawFileName)) return rawFileName;
+        if (!string.IsNullOrWhiteSpace(url)) return url;
+
+        return $"entry-{entryIndexFallback(entry)}";
+    }
+
+    private static string entryIndexFallback(JsonElement entry)
+    {
+        var started = GetString(entry, "startedDateTime");
+        return string.IsNullOrWhiteSpace(started) ? "unknown" : started;
     }
 
     private static Dictionary<string, string> ReadHeaders(JsonElement owner)
@@ -168,8 +167,8 @@ public static class HarScanner
         {
             var name = GetString(header, "name");
             var value = GetString(header, "value");
-            if (string.IsNullOrWhiteSpace(name)) continue;
-            result[name] = value;
+            if (!string.IsNullOrWhiteSpace(name))
+                result[name] = value;
         }
 
         return result;
@@ -177,8 +176,7 @@ public static class HarScanner
 
     private static string GetMimeType(JsonElement response, IReadOnlyDictionary<string, string> responseHeaders)
     {
-        if (response.ValueKind == JsonValueKind.Object &&
-            response.TryGetProperty("content", out var content))
+        if (response.ValueKind == JsonValueKind.Object && response.TryGetProperty("content", out var content))
         {
             var fromContent = GetString(content, "mimeType");
             if (!string.IsNullOrWhiteSpace(fromContent))
@@ -195,17 +193,6 @@ public static class HarScanner
     {
         var semicolon = value.IndexOf(';');
         return (semicolon >= 0 ? value[..semicolon] : value).Trim();
-    }
-
-    private static string Classify(string mime, string extension)
-    {
-        if (mime.StartsWith("audio/", StringComparison.OrdinalIgnoreCase) || AudioExtensions.Contains(extension))
-            return "Audio";
-
-        if (mime.StartsWith("video/", StringComparison.OrdinalIgnoreCase) || VideoExtensions.Contains(extension))
-            return "Video";
-
-        return "Other";
     }
 
     private static string GetRawFileName(
@@ -225,8 +212,7 @@ public static class HarScanner
                 return EnsureExtension(segment, mime);
         }
 
-        var fallback = $"entry-{entryIndex:00000}";
-        return EnsureExtension(fallback, mime);
+        return EnsureExtension($"entry-{entryIndex:00000}", mime);
     }
 
     private static string TryFileNameFromContentDisposition(IReadOnlyDictionary<string, string> headers)
@@ -258,10 +244,9 @@ public static class HarScanner
         if (!string.IsNullOrWhiteSpace(Path.GetExtension(fileName)))
             return fileName;
 
-        if (MimeExtensions.TryGetValue(mime, out var extension))
-            return fileName + extension;
-
-        return fileName;
+        return MimeExtensions.TryGetValue(mime, out var extension)
+            ? fileName + extension
+            : fileName;
     }
 
     private static bool HasEmbeddedText(JsonElement response)
@@ -279,10 +264,9 @@ public static class HarScanner
         var text = content.GetProperty("text").GetString() ?? string.Empty;
         var encoding = GetString(content, "encoding");
 
-        if (encoding.Equals("base64", StringComparison.OrdinalIgnoreCase))
-            return Convert.FromBase64String(text);
-
-        return Encoding.UTF8.GetBytes(text);
+        return encoding.Equals("base64", StringComparison.OrdinalIgnoreCase)
+            ? Convert.FromBase64String(text)
+            : Encoding.UTF8.GetBytes(text);
     }
 
     private static bool CanReplayAsGet(string method, string url)
@@ -295,61 +279,9 @@ public static class HarScanner
                 uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static long? GetContentSize(JsonElement response)
-    {
-        if (response.ValueKind != JsonValueKind.Object) return null;
-
-        if (response.TryGetProperty("content", out var content))
-        {
-            var size = GetInt64(content, "size");
-            if (size is >= 0) return size;
-        }
-
-        var bodySize = GetInt64(response, "bodySize");
-        return bodySize is >= 0 ? bodySize : null;
-    }
-
-    private static string BuildDiagnostic(
-        string mime,
-        string extension,
-        bool embedded,
-        bool replay,
-        int status,
-        string classification)
-    {
-        var parts = new List<string>();
-
-        if (!string.IsNullOrWhiteSpace(mime)) parts.Add($"mime={mime}");
-        if (!string.IsNullOrWhiteSpace(extension)) parts.Add($"ext={extension}");
-        if (status != 0) parts.Add($"http={status}");
-        if (embedded) parts.Add("embedded-body");
-        if (replay) parts.Add("replayable-get");
-        if (classification == "Other") parts.Add("no-audio-video-signal");
-
-        return string.Join(" | ", parts);
-    }
-
-    private static string FormatBytes(long? size)
-    {
-        if (size is null) return string.Empty;
-
-        double value = size.Value;
-        string[] units = ["B", "KB", "MB", "GB"];
-        var unit = 0;
-
-        while (value >= 1024 && unit < units.Length - 1)
-        {
-            value /= 1024;
-            unit++;
-        }
-
-        return unit == 0 ? $"{value:0} {units[unit]}" : $"{value:0.##} {units[unit]}";
-    }
-
     private static string GetString(JsonElement owner, string propertyName)
     {
-        if (owner.ValueKind != JsonValueKind.Object ||
-            !owner.TryGetProperty(propertyName, out var value))
+        if (owner.ValueKind != JsonValueKind.Object || !owner.TryGetProperty(propertyName, out var value))
             return string.Empty;
 
         return value.ValueKind switch
@@ -360,50 +292,5 @@ public static class HarScanner
             JsonValueKind.False => "false",
             _ => string.Empty
         };
-    }
-
-    private static int GetInt32(JsonElement owner, string propertyName)
-    {
-        if (owner.ValueKind != JsonValueKind.Object ||
-            !owner.TryGetProperty(propertyName, out var value))
-            return 0;
-
-        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number))
-            return number;
-
-        if (value.ValueKind == JsonValueKind.String && int.TryParse(value.GetString(), out number))
-            return number;
-
-        return 0;
-    }
-
-    private static long? GetInt64(JsonElement owner, string propertyName)
-    {
-        if (owner.ValueKind != JsonValueKind.Object ||
-            !owner.TryGetProperty(propertyName, out var value))
-            return null;
-
-        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out var number))
-            return number;
-
-        if (value.ValueKind == JsonValueKind.String && long.TryParse(value.GetString(), out number))
-            return number;
-
-        return null;
-    }
-
-    private static string TryGetRawUrl(JsonElement entry)
-    {
-        try
-        {
-            if (entry.TryGetProperty("request", out var request))
-                return GetString(request, "url");
-        }
-        catch
-        {
-            // This is only emergency diagnostic recovery.
-        }
-
-        return string.Empty;
     }
 }
