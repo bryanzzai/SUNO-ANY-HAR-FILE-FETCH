@@ -45,3 +45,11 @@ The app never makes a network request. It uses only the selected HAR's embedded 
 ```powershell
 dotnet build .\src\suno-raw-har-scanner\suno-raw-har-scanner.csproj -c Release
 ```
+
+## Self-contained Windows package
+
+Use `publish`, not `build`, when the app must run on a Windows machine without a separately installed .NET runtime. Keep the complete output folder together; `suno-raw-har-scanner.exe` is not meant to be copied out on its own.
+
+```powershell
+dotnet publish .\src\suno-raw-har-scanner\suno-raw-har-scanner.csproj -c Release -r win-x64 --self-contained true -o .\publish\suno-raw-har-scanner
+```
