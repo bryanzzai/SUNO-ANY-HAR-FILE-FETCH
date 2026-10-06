@@ -1,28 +1,21 @@
 # SUNO-ANY-HAR-FILE-FETCH
 
-Windows WPF utility for inspecting HAR captures and recovering/downloading audio and video resources.
+Development branch: `har-raw-scanner`.
 
-## Current branch: `har-raw-scanner`
+Windows WPF utility for reading a HAR file and recovering downloadable audio/video resources.
 
-This is deliberately a **raw development scanner**. It is not the cleaned-up production view yet.
+## Current workflow
 
-### Current flow
-
-1. Choose one `.har` file.
+1. Choose one `.har` file with the file picker.
 2. Choose a local output folder.
-3. Press **BORE THROUGH HAR**.
-4. The app walks the complete `log.entries` array.
-5. The result grid shows the **first 100 HAR entries in original order**, including `Other` and diagnostic/error rows.
-6. Every displayed row can be ticked. The raw development view does not block selection based on classification or recovery status.
-7. Press **DOWNLOAD TICKED**.
-8. Only at the write boundary are exact filename twins Roman-numbered.
-
-The raw grid is never cosmetically deduplicated or renamed.
-
-### Roman duplicate rule
-
-Roman numbering is global and applies only when selected output rows have the same full filename
-(case-insensitive), including the same extension.
+3. Scan the HAR.
+4. The scanner walks the full HAR entry list and keeps downloadable audio/video candidates.
+5. The result grid shows at most 100 candidates and contains only:
+   - `Download`
+   - `release_name`
+6. Every displayed row can be ticked with one click.
+7. Press **Download selected**.
+8. Exact same-name + same-extension output twins are Roman-numbered only when the files are written.
 
 Example:
 
@@ -32,7 +25,7 @@ music.mp3
 music.wav
 ```
 
-is written as:
+becomes:
 
 ```text
 music [ I ].mp3
@@ -40,44 +33,14 @@ music [ II ].mp3
 music.wav
 ```
 
-`music.mp3` and `music.wav` are not twins and are not Roman-numbered.
+`music.mp3` and `music.wav` are not twins.
 
-Roman order follows the original HAR entry order, not visual sorting.
+`release_name` uses HAR comment/description text when available and otherwise falls back to the raw filename or URL-derived filename.
 
-### Recovery modes
-
-The raw scanner currently recognizes:
-
-- **Embedded** — response content is present inside the HAR.
-- **Replay GET** — an HTTP/HTTPS GET can be attempted using captured request headers.
-- **Unavailable** — visible for diagnosis and still tickable in the raw development view; an attempted download is allowed to fail visibly.
-
-The download replay intentionally drops `Range`/`If-Range` so a captured partial request does not
-automatically force a partial output file.
-
-### Diagnostic philosophy
-
-The development build favors evidence over presentation:
-
-- maximum 100 displayed rows;
-- the parser still scans the complete HAR for counts;
-- no hidden dedupe;
-- non-media entries remain visible;
-- every displayed row is selectable;
-- entry-level failures become visible diagnostic/download-status information;
-- fatal HAR structure/parser failures show the full exception dump.
-
-A later production pass will filter the grid down to recoverable audio/video and silently bore past
-bad entries while preserving useful failure status per attempted download.
+The current development build supports embedded HAR response bodies and replayable HTTP/HTTPS GET requests.
 
 ## Build
 
-Requirements:
-
-- Windows 10 or 11
-- .NET 10 SDK
-
 ```powershell
 dotnet build .\src\SubdlProDownload\SubdlProDownload.csproj -c Release
-dotnet run --project .\src\SubdlProDownload\SubdlProDownload.csproj -c Release
 ```
