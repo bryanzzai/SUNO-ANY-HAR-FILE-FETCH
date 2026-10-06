@@ -41,7 +41,7 @@
                 <Button x:Name="ScanButton" Grid.Column="3" Padding="14,7" Content="Scan HAR" Click="ScanButton_Click"/>
             </Grid>
 
-            <Grid>
+            <Grid Margin="0,0,0,8">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="120"/>
                     <ColumnDefinition Width="*"/>
@@ -51,11 +51,24 @@
                 <TextBox x:Name="OutputFolderTextBox" Grid.Column="1" MinHeight="34" VerticalContentAlignment="Center" Margin="0,0,8,0"/>
                 <Button x:Name="BrowseOutputButton" Grid.Column="2" Padding="14,7" Content="Choose folder…" Click="BrowseOutputButton_Click"/>
             </Grid>
+
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="120"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="Filter release name"/>
+                <TextBox x:Name="ResultsFilterTextBox"
+                         Grid.Column="1"
+                         MinHeight="34"
+                         VerticalContentAlignment="Center"
+                         TextChanged="ResultsFilterTextBox_TextChanged"/>
+            </Grid>
         </StackPanel>
 
         <DataGrid x:Name="HarGrid"
                   Grid.Row="2"
-                  ItemsSource="{Binding Rows}"
+                  ItemsSource="{Binding RowsView}"
                   AutoGenerateColumns="False"
                   CanUserAddRows="False"
                   CanUserDeleteRows="False"
