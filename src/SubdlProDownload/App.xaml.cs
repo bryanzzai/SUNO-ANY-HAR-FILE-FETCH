@@ -1,6 +1,6 @@
 using System.Windows;
 
-namespace SubdlProDownload;
+namespace SunoHarFileDownload;
 
 public partial class App : Application
 {

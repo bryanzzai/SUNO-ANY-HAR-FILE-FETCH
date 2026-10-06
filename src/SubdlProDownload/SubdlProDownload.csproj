@@ -6,9 +6,9 @@
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <RootNamespace>SubdlProDownload</RootNamespace>
-    <AssemblyName>SubdlProDownload</AssemblyName>
-    <Version>1.0.1</Version>
+    <RootNamespace>SunoHarFileDownload</RootNamespace>
+    <AssemblyName>SunoHarFileDownload</AssemblyName>
+    <Version>0.1.0</Version>
   </PropertyGroup>
 
 </Project>
