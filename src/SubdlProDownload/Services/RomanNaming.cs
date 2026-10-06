@@ -11,19 +11,19 @@ public static class RomanNaming
 
         foreach (var group in selectedRows
                      .OrderBy(row => row.EntryIndex)
-                     .GroupBy(row => row.RawFileName, StringComparer.OrdinalIgnoreCase))
+                     .GroupBy(row => row.OutputFileName, StringComparer.OrdinalIgnoreCase))
         {
             var ordered = group.OrderBy(row => row.EntryIndex).ToArray();
 
             if (ordered.Length == 1)
             {
-                result[ordered[0]] = MakeWindowsSafe(ordered[0].RawFileName);
+                result[ordered[0]] = MakeWindowsSafe(ordered[0].OutputFileName);
                 continue;
             }
 
             for (var index = 0; index < ordered.Length; index++)
             {
-                var raw = ordered[index].RawFileName;
+                var raw = ordered[index].OutputFileName;
                 var extension = Path.GetExtension(raw);
                 var stem = extension.Length == 0 ? raw : raw[..^extension.Length];
                 var romanized = $"{stem} [ {ToRoman(index + 1)} ]{extension}";

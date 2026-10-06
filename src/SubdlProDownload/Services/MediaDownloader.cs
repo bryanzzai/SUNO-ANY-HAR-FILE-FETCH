@@ -1,5 +1,6 @@
-using System.IO;
 using System.Net.Http;
+using System.Text;
+using System.Text.Json;
 using SunoHarFileDownload.Models;
 
 namespace SunoHarFileDownload.Services;
@@ -8,86 +9,66 @@ public sealed class MediaDownloader : IDisposable
 {
     private static readonly HashSet<string> SkippedRequestHeaders = new(StringComparer.OrdinalIgnoreCase)
     {
-        "Host",
-        "Content-Length",
-        "Connection",
-        "Accept-Encoding",
-        "Transfer-Encoding",
-        "Range",
-        "If-Range"
+        "Host", "Content-Length", "Connection", "Accept-Encoding", "Transfer-Encoding", "Range", "If-Range", "Content-Type"
     };
 
     private readonly HttpClient _client = new(new HttpClientHandler
     {
         AllowAutoRedirect = true,
         AutomaticDecompression = System.Net.DecompressionMethods.All
-    })
+    }) { Timeout = TimeSpan.FromMinutes(10) };
+
+    public async Task<byte[]> FetchLiveMediaAsync(HarEntryRow row, CancellationToken cancellationToken)
     {
-        Timeout = TimeSpan.FromMinutes(10)
-    };
+        using var request = BuildRequest(HttpMethod.Get, row.Url, row.RequestHeaders, null);
+        using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadAsByteArrayAsync(cancellationToken);
+    }
 
-    public async Task DownloadAsync(
-        HarEntryRow row,
-        string outputFolder,
-        string finalFileName,
-        CancellationToken cancellationToken)
+    public async Task<MangoLicense> FetchCurrentLicenseAsync(HarEntryRow row, CancellationToken cancellationToken)
     {
-        Directory.CreateDirectory(outputFolder);
+        var recipe = row.RightsRequest ?? throw new InvalidOperationException(
+            "No matching rights request was found. Capture a fresh HAR while playing this song.");
+        using var request = BuildRequest(new HttpMethod(recipe.Method), recipe.Url, recipe.Headers, recipe.Body);
+        using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        var license = await JsonSerializer.DeserializeAsync<MangoLicense>(stream, cancellationToken: cancellationToken);
+        return license ?? throw new InvalidOperationException("The rights service returned no usable key material.");
+    }
 
-        var destination = Path.Combine(outputFolder, finalFileName);
-        if (File.Exists(destination))
-            throw new IOException($"Destination already exists: {destination}");
+    public static string GetBearerToken(HarEntryRow row)
+    {
+        var recipe = row.RightsRequest ?? throw new InvalidOperationException("No matching rights request was found.");
+        if (!recipe.Headers.TryGetValue("Authorization", out var authorization) ||
+            !authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("The HAR does not contain a bearer token for the rights request.");
+        return authorization["Bearer ".Length..].Trim();
+    }
 
-        var temporary = destination + ".part";
-        if (File.Exists(temporary))
-            File.Delete(temporary);
+    private static HttpRequestMessage BuildRequest(HttpMethod method, string url, IReadOnlyDictionary<string, string> headers, string? body)
+    {
+        var request = new HttpRequestMessage(method, url);
+        if (body is not null)
+            request.Content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        try
+        foreach (var pair in headers)
         {
-            if (row.EmbeddedBody is not null)
-            {
-                await File.WriteAllBytesAsync(temporary, row.EmbeddedBody, cancellationToken);
-            }
-            else
-            {
-                using var request = new HttpRequestMessage(HttpMethod.Get, row.Url);
-
-                foreach (var pair in row.RequestHeaders)
-                {
-                    if (SkippedRequestHeaders.Contains(pair.Key) ||
-                        pair.Key.StartsWith(":", StringComparison.Ordinal))
-                        continue;
-
-                    request.Headers.TryAddWithoutValidation(pair.Key, pair.Value);
-                }
-
-                using var response = await _client.SendAsync(
-                    request,
-                    HttpCompletionOption.ResponseHeadersRead,
-                    cancellationToken);
-
-                response.EnsureSuccessStatusCode();
-
-                await using var source = await response.Content.ReadAsStreamAsync(cancellationToken);
-                await using var target = new FileStream(
-                    temporary,
-                    FileMode.CreateNew,
-                    FileAccess.Write,
-                    FileShare.None,
-                    1024 * 128,
-                    useAsync: true);
-
-                await source.CopyToAsync(target, cancellationToken);
-            }
-
-            File.Move(temporary, destination);
+            if (SkippedRequestHeaders.Contains(pair.Key) || pair.Key.StartsWith(':')) continue;
+            var value = pair.Key.Equals("browser-token", StringComparison.OrdinalIgnoreCase)
+                ? MakeBrowserToken() : pair.Value;
+            request.Headers.TryAddWithoutValidation(pair.Key, value);
         }
-        catch
-        {
-            if (File.Exists(temporary))
-                File.Delete(temporary);
-            throw;
-        }
+        return request;
+    }
+
+    private static string MakeBrowserToken()
+    {
+        var json = $"{{\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}}}";
+        var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(json))
+            .TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        return $"{{\"token\":\"{encoded}\"}}";
     }
 
     public void Dispose() => _client.Dispose();

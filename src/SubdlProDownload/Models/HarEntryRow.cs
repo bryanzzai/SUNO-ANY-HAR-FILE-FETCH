@@ -10,6 +10,8 @@ public sealed class HarEntryRow : INotifyPropertyChanged
     public required int EntryIndex { get; init; }
     public required string ReleaseName { get; init; }
     public required string RawFileName { get; init; }
+    public required string OutputFileName { get; init; }
+    public required string ContentId { get; init; }
     public required string Url { get; init; }
     public required string PayloadStatus { get; init; }
     public bool IsOpaquePayload { get; init; }
@@ -17,6 +19,7 @@ public sealed class HarEntryRow : INotifyPropertyChanged
     public byte[]? EmbeddedBody { get; init; }
     public IReadOnlyDictionary<string, string> RequestHeaders { get; init; }
         = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    public HarRequestRecipe? RightsRequest { get; init; }
 
     public bool IsSelected
     {

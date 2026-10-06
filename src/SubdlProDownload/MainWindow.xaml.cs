@@ -111,7 +111,7 @@ public partial class MainWindow : Window
                 : $"Scan complete. Found {scan.DownloadableEntries} downloadable audio/video entries.";
 
             if (scan.OpaquePayloadEntries > 0)
-                StatusTextBlock.Text += $" {scan.OpaquePayloadEntries} embedded payload(s) are opaque and will be saved as .enc, not presented as playable media.";
+                StatusTextBlock.Text += $" {scan.OpaquePayloadEntries} source entr(y/ies) have matching rights records and will be fetched live when selected.";
 
             if (scan.ParseProblems > 0)
                 StatusTextBlock.Text += $" Skipped {scan.ParseProblems} malformed entries.";
@@ -151,7 +151,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        BeginOperation($"Preparing {selected.Length} download(s)…");
+        BeginOperation($"Preparing {selected.Length} selected song(s)…");
         ProgressBar.Maximum = selected.Length;
         ProgressBar.Value = 0;
 
@@ -159,20 +159,20 @@ public partial class MainWindow : Window
         {
             Directory.CreateDirectory(outputFolder);
             var finalNames = RomanNaming.BuildFinalNames(selected);
-            using var downloader = new MediaDownloader();
+            var pipeline = new SunoWavPipeline();
+            var zipPath = await pipeline.CreateZipAsync(
+                selected,
+                finalNames,
+                outputFolder,
+                (index, row, phase) =>
+                {
+                    StatusTextBlock.Text = $"{phase} {index}/{selected.Length}: {row.ReleaseName}";
+                    ProgressBar.Value = index - 1;
+                },
+                _operationCts!.Token);
 
-            for (var index = 0; index < selected.Length; index++)
-            {
-                _operationCts!.Token.ThrowIfCancellationRequested();
-                var row = selected[index];
-                var finalName = finalNames[row];
-
-                StatusTextBlock.Text = $"Downloading {index + 1}/{selected.Length}: {row.ReleaseName}";
-                await downloader.DownloadAsync(row, outputFolder, finalName, _operationCts.Token);
-                ProgressBar.Value = index + 1;
-            }
-
-            StatusTextBlock.Text = $"Download complete. {selected.Length} file(s) written.";
+            ProgressBar.Value = selected.Length;
+            StatusTextBlock.Text = $"Complete. {selected.Length} WAV file(s) packed in {Path.GetFileName(zipPath)}.";
         }
         catch (OperationCanceledException)
         {
