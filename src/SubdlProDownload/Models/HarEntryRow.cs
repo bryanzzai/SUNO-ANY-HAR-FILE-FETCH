@@ -30,9 +30,8 @@ public sealed class HarEntryRow : INotifyPropertyChanged
         get => _isSelected;
         set
         {
-            var next = value && CanDownload;
-            if (_isSelected == next) return;
-            _isSelected = next;
+            if (_isSelected == value) return;
+            _isSelected = value;
             OnPropertyChanged();
         }
     }
