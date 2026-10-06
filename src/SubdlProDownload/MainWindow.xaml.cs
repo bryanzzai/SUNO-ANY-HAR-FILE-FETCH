@@ -103,19 +103,19 @@ public partial class MainWindow : Window
 
     private void DownloadCheckBox_Click(object sender, RoutedEventArgs e)
     {
-        DownloadButton.IsEnabled = Rows.Any(row => row.IsSelected && row.CanDownload);
+        DownloadButton.IsEnabled = Rows.Any(row => row.IsSelected);
     }
 
     private async void DownloadButton_Click(object sender, RoutedEventArgs e)
     {
         var selected = Rows
-            .Where(row => row.IsSelected && row.CanDownload)
+            .Where(row => row.IsSelected)
             .OrderBy(row => row.EntryIndex)
             .ToArray();
 
         if (selected.Length == 0)
         {
-            MessageBox.Show(this, "Tick one or more recoverable Audio/Video rows first.", "Nothing selected", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show(this, "Tick one or more rows first.", "Nothing selected", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
@@ -126,7 +126,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        BeginOperation($"Preparing {selected.Length} selected media download(s)…");
+        BeginOperation($"Preparing {selected.Length} selected download(s)…");
         ProgressBar.Maximum = selected.Length;
         ProgressBar.Value = 0;
 
@@ -186,7 +186,7 @@ public partial class MainWindow : Window
         finally
         {
             EndOperation();
-            DownloadButton.IsEnabled = Rows.Any(row => row.IsSelected && row.CanDownload);
+            DownloadButton.IsEnabled = Rows.Any(row => row.IsSelected);
         }
     }
 
