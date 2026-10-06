@@ -13,7 +13,7 @@ This is deliberately a **raw development scanner**. It is not the cleaned-up pro
 3. Press **BORE THROUGH HAR**.
 4. The app walks the complete `log.entries` array.
 5. The result grid shows the **first 100 HAR entries in original order**, including `Other` and diagnostic/error rows.
-6. Audio/video rows that have a usable recovery path can be ticked.
+6. Every displayed row can be ticked. The raw development view does not block selection based on classification or recovery status.
 7. Press **DOWNLOAD TICKED**.
 8. Only at the write boundary are exact filename twins Roman-numbered.
 
@@ -50,7 +50,7 @@ The raw scanner currently recognizes:
 
 - **Embedded** — response content is present inside the HAR.
 - **Replay GET** — an HTTP/HTTPS GET can be attempted using captured request headers.
-- **Unavailable** — visible for diagnosis, not tickable.
+- **Unavailable** — visible for diagnosis and still tickable in the raw development view; an attempted download is allowed to fail visibly.
 
 The download replay intentionally drops `Range`/`If-Range` so a captured partial request does not
 automatically force a partial output file.
@@ -63,7 +63,8 @@ The development build favors evidence over presentation:
 - the parser still scans the complete HAR for counts;
 - no hidden dedupe;
 - non-media entries remain visible;
-- entry-level failures become visible diagnostic rows;
+- every displayed row is selectable;
+- entry-level failures become visible diagnostic/download-status information;
 - fatal HAR structure/parser failures show the full exception dump.
 
 A later production pass will filter the grid down to recoverable audio/video and silently bore past
