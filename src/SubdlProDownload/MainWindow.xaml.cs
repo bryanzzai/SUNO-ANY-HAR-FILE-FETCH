@@ -1,7 +1,9 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
 using System.Reflection;
 using System.Windows;
+using System.Windows.Data;
 using Microsoft.Win32;
 using SunoHarFileDownload.Models;
 using SunoHarFileDownload.Services;
@@ -14,12 +16,41 @@ public partial class MainWindow : Window
     private CancellationTokenSource? _operationCts;
 
     public ObservableCollection<HarEntryRow> Rows { get; } = [];
+    public ICollectionView RowsView { get; }
     public string ReleaseLabel => $"RAW {Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.1.0"}";
 
     public MainWindow()
     {
         InitializeComponent();
+        RowsView = CollectionViewSource.GetDefaultView(Rows);
+        RowsView.Filter = FilterRow;
         DataContext = this;
+    }
+
+    private bool FilterRow(object item)
+    {
+        if (item is not HarEntryRow row) return false;
+
+        var filter = ResultsFilterTextBox?.Text.Trim();
+        if (string.IsNullOrWhiteSpace(filter)) return true;
+
+        return row.ReleaseName.Contains(filter, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void ResultsFilterTextBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+    {
+        RowsView?.Refresh();
+        UpdateVisibleRowCount();
+    }
+
+    private void UpdateVisibleRowCount()
+    {
+        var totalRows = Rows.Count;
+        var visibleRows = RowsView?.Cast<object>().Count(item => item is HarEntryRow) ?? totalRows;
+
+        CountTextBlock.Text = string.IsNullOrWhiteSpace(ResultsFilterTextBox?.Text)
+            ? $"{totalRows} rows"
+            : $"{visibleRows} of {totalRows} rows";
     }
 
     private void BrowseHarButton_Click(object sender, RoutedEventArgs e)
@@ -62,6 +93,7 @@ public partial class MainWindow : Window
 
         BeginOperation("Scanning HAR entries…");
         Rows.Clear();
+        RowsView.Refresh();
         CountTextBlock.Text = "scanning…";
 
         try
@@ -71,7 +103,9 @@ public partial class MainWindow : Window
             foreach (var row in scan.Rows)
                 Rows.Add(row);
 
-            CountTextBlock.Text = $"{scan.DisplayedEntries} rows";
+            RowsView.Refresh();
+            UpdateVisibleRowCount();
+
             StatusTextBlock.Text = scan.DownloadableEntries > MaxDisplayedRows
                 ? $"Scan complete. Found {scan.DownloadableEntries} downloadable audio/video entries; showing first {MaxDisplayedRows}."
                 : $"Scan complete. Found {scan.DownloadableEntries} downloadable audio/video entries.";
