@@ -37,7 +37,7 @@ music.wav
 
 `release_name` uses HAR comment/description text when available and otherwise falls back to the raw filename or URL-derived filename.
 
-The current development build supports embedded HAR response bodies and replayable HTTP/HTTPS GET requests.
+The current development build supports embedded HAR response bodies and replayable HTTP/HTTPS GET requests. It also inspects embedded bytes before naming them as media: verified container signatures remain media candidates, while opaque payloads are explicitly marked and saved with a `.enc` suffix rather than being mislabeled as playable `.m4a` files. A matching `mango/rights` HAR request is surfaced as diagnostic context only.
 
 ## Build
 

@@ -22,7 +22,7 @@
             </Grid.ColumnDefinitions>
             <StackPanel>
                 <TextBlock Text="SUNO HAR File Download" FontSize="28" FontWeight="SemiBold"/>
-                <TextBlock Margin="0,4,0,0" Foreground="DimGray" Text="Choose a HAR file, inspect the downloadable audio/video entries, tick what you want, and download."/>
+                <TextBlock Margin="0,4,0,0" Foreground="DimGray" Text="Choose a HAR file, inspect candidate media payloads, and save only what you select."/>
             </StackPanel>
             <TextBlock Grid.Column="1" VerticalAlignment="Top" Foreground="DimGray" FontSize="11" Text="{Binding ReleaseLabel}"/>
         </Grid>
@@ -91,6 +91,7 @@
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
                 <DataGridTextColumn Header="release_name" Binding="{Binding ReleaseName}" Width="*" IsReadOnly="True"/>
+                <DataGridTextColumn Header="payload" Binding="{Binding PayloadStatus}" Width="330" IsReadOnly="True"/>
             </DataGrid.Columns>
         </DataGrid>
 
@@ -106,7 +107,7 @@
             </StackPanel>
             <TextBlock x:Name="CountTextBlock" Grid.Column="1" Margin="16,0" VerticalAlignment="Center" Foreground="DimGray" Text="0 rows"/>
             <StackPanel Grid.Column="2" Orientation="Horizontal">
-                <Button x:Name="DownloadButton" Padding="14,6" Margin="0,0,8,0" Content="Download selected" Click="DownloadButton_Click" IsEnabled="False"/>
+                <Button x:Name="DownloadButton" Padding="14,6" Margin="0,0,8,0" Content="Save selected" Click="DownloadButton_Click" IsEnabled="False"/>
                 <Button x:Name="CancelButton" Padding="14,6" Content="Cancel" IsEnabled="False" Click="CancelButton_Click"/>
             </StackPanel>
         </Grid>

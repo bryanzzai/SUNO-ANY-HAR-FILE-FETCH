@@ -110,6 +110,9 @@ public partial class MainWindow : Window
                 ? $"Scan complete. Found {scan.DownloadableEntries} downloadable audio/video entries; showing first {MaxDisplayedRows}."
                 : $"Scan complete. Found {scan.DownloadableEntries} downloadable audio/video entries.";
 
+            if (scan.OpaquePayloadEntries > 0)
+                StatusTextBlock.Text += $" {scan.OpaquePayloadEntries} embedded payload(s) are opaque and will be saved as .enc, not presented as playable media.";
+
             if (scan.ParseProblems > 0)
                 StatusTextBlock.Text += $" Skipped {scan.ParseProblems} malformed entries.";
         }

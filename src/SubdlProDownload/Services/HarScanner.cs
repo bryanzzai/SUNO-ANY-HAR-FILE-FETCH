@@ -51,7 +51,9 @@ public static class HarScanner
         }
 
         var rows = new List<HarEntryRow>(Math.Min(maxDisplayedRows, entries.GetArrayLength()));
+        var rightsContentIds = FindMangoRightsContentIds(entries);
         var downloadableEntries = 0;
+        var opaquePayloadEntries = 0;
         var parseProblems = 0;
         var entryIndex = 0;
 
@@ -62,10 +64,12 @@ public static class HarScanner
 
             try
             {
-                var parsed = ParseEntry(entry, entryIndex, rows.Count < maxDisplayedRows);
+                var parsed = ParseEntry(entry, entryIndex, rows.Count < maxDisplayedRows, rightsContentIds);
                 if (!parsed.Downloadable) continue;
 
                 downloadableEntries++;
+                if (parsed.IsOpaquePayload)
+                    opaquePayloadEntries++;
                 if (parsed.Row is not null)
                     rows.Add(parsed.Row);
             }
@@ -79,14 +83,16 @@ public static class HarScanner
             entryIndex,
             downloadableEntries,
             rows.Count,
+            opaquePayloadEntries,
             parseProblems,
             rows);
     }
 
-    private static (bool Downloadable, HarEntryRow? Row) ParseEntry(
+    private static (bool Downloadable, bool IsOpaquePayload, HarEntryRow? Row) ParseEntry(
         JsonElement entry,
         int entryIndex,
-        bool materialize)
+        bool materialize,
+        IReadOnlySet<string> rightsContentIds)
     {
         var request = entry.TryGetProperty("request", out var requestElement) ? requestElement : default;
         var response = entry.TryGetProperty("response", out var responseElement) ? responseElement : default;
@@ -102,29 +108,113 @@ public static class HarScanner
         var isAudio = mime.StartsWith("audio/", StringComparison.OrdinalIgnoreCase) || AudioExtensions.Contains(extension);
         var isVideo = mime.StartsWith("video/", StringComparison.OrdinalIgnoreCase) || VideoExtensions.Contains(extension);
         if (!isAudio && !isVideo)
-            return (false, null);
+            return (false, false, null);
 
         var hasEmbeddedBody = HasEmbeddedText(response);
         var canReplay = CanReplayAsGet(method, url);
         if (!hasEmbeddedBody && !canReplay)
-            return (false, null);
+            return (false, false, null);
+
+        var embeddedBody = hasEmbeddedBody ? DecodeEmbeddedBody(response) : null;
+        var contentId = Path.GetFileNameWithoutExtension(rawFileName);
+        var payload = DescribePayload(embeddedBody, rightsContentIds.Contains(contentId));
 
         if (!materialize)
-            return (true, null);
+            return (true, payload.IsOpaque, null);
 
         var releaseName = GetReleaseName(entry, request, response, rawFileName, url);
-        var embeddedBody = hasEmbeddedBody ? DecodeEmbeddedBody(response) : null;
 
-        return (true, new HarEntryRow
+        if (payload.IsOpaque)
+            rawFileName += ".enc";
+
+        return (true, payload.IsOpaque, new HarEntryRow
         {
             EntryIndex = entryIndex,
             ReleaseName = releaseName,
             RawFileName = rawFileName,
             Url = url,
+            PayloadStatus = payload.Status,
+            IsOpaquePayload = payload.IsOpaque,
             EmbeddedBody = embeddedBody,
             RequestHeaders = requestHeaders
         });
     }
+
+    private static HashSet<string> FindMangoRightsContentIds(JsonElement entries)
+    {
+        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var entry in entries.EnumerateArray())
+        {
+            var request = entry.TryGetProperty("request", out var requestElement) ? requestElement : default;
+            var url = GetString(request, "url");
+            if (!url.Contains("/api/mango/rights", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            try
+            {
+                if (!request.TryGetProperty("postData", out var postData))
+                    continue;
+
+                var text = GetString(postData, "text");
+                if (string.IsNullOrWhiteSpace(text))
+                    continue;
+
+                using var document = JsonDocument.Parse(text);
+                if (!document.RootElement.TryGetProperty("content_params", out var parameters))
+                    continue;
+
+                var contentId = GetString(parameters, "content_id");
+                if (!string.IsNullOrWhiteSpace(contentId))
+                    ids.Add(contentId);
+            }
+            catch (JsonException)
+            {
+                // A malformed auxiliary request must not prevent media scanning.
+            }
+        }
+
+        return ids;
+    }
+
+    private static PayloadAnalysis DescribePayload(byte[]? body, bool matchingRightsRecord)
+    {
+        if (body is null)
+            return new PayloadAnalysis("Not embedded in HAR — validate after fetch", false);
+
+        if (IsIsoBaseMedia(body))
+            return new PayloadAnalysis("MP4 / M4A container verified", false);
+
+        if (StartsWith(body, "OggS"u8))
+            return new PayloadAnalysis("Ogg container verified", false);
+
+        if (StartsWith(body, "RIFF"u8) && body.Length >= 12 && StartsWith(body.AsSpan(8), "WAVE"u8))
+            return new PayloadAnalysis("WAV container verified", false);
+
+        if (StartsWith(body, "fLaC"u8))
+            return new PayloadAnalysis("FLAC container verified", false);
+
+        if (StartsWith(body, "ID3"u8) || HasMp3FrameSync(body))
+            return new PayloadAnalysis("MP3 stream signature verified", false);
+
+        if (StartsWith(body, new byte[] { 0x1A, 0x45, 0xDF, 0xA3 }))
+            return new PayloadAnalysis("WebM / Matroska container verified", false);
+
+        return matchingRightsRecord
+            ? new PayloadAnalysis("Encrypted or opaque payload — matching rights record found", true)
+            : new PayloadAnalysis("Opaque payload — media container signature not found", true);
+    }
+
+    private static bool IsIsoBaseMedia(ReadOnlySpan<byte> body)
+        => body.Length >= 8 && StartsWith(body[4..], "ftyp"u8);
+
+    private static bool StartsWith(ReadOnlySpan<byte> body, ReadOnlySpan<byte> prefix)
+        => body.Length >= prefix.Length && body[..prefix.Length].SequenceEqual(prefix);
+
+    private static bool HasMp3FrameSync(ReadOnlySpan<byte> body)
+        => body.Length >= 2 && body[0] == 0xFF && (body[1] & 0xE0) == 0xE0;
+
+    private sealed record PayloadAnalysis(string Status, bool IsOpaque);
 
     private static string GetReleaseName(
         JsonElement entry,
